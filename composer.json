@@ -1,0 +1,35 @@
+{
+    "name": "skcheung/laravel-arcadedb",
+    "description": "Laravel Eloquent Driver for ArcadeDB",
+    "type": "library",
+    "autoload": {
+        "psr-4": {
+            "SKCheung\\ArcadeDB\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Siu Kei CHEUNG",
+            "email": "siukei.cheung@outlook.com"
+        }
+    ],
+    "require": {
+        "php": "^8.1",
+        "guzzlehttp/guzzle": "^7.8",
+        "illuminate/contracts": "^11.10",
+        "illuminate/container": "^11.10",
+        "illuminate/database": "^11.10",
+        "illuminate/events": "^11.10",
+        "illuminate/support": "^11.10"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "SKCheung\\ArcadeDB\\ArcadeServiceProvider"
+            ]
+        }
+    }
+}
