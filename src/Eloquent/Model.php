@@ -19,6 +19,8 @@ abstract class Model extends BaseModel
 
     public $incrementing = false;
 
+    protected $dateFormat = 'Y-m-d H:i:s';
+
     public function getAttribute($key)
     {
         if ($key === 'id') {
@@ -50,4 +52,21 @@ abstract class Model extends BaseModel
     {
         return $this->getKeyName();
     }
+
+    public function addTimestamps(): void
+    {
+        $this->updateTimestamps();
+    }
+
+    public function getDirty(): array
+    {
+        $dirty = parent::getDirty();
+
+        // We need to remove the primary key from the dirty attributes since primary keys
+        // never change and when updating it shouldn't be part of the attribtues.
+        if (isset($dirty[$this->primaryKey])) unset($dirty[$this->primaryKey]);
+
+        return $dirty;
+    }
+
 }

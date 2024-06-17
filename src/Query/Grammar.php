@@ -3,6 +3,8 @@
 namespace SKCheung\ArcadeDB\Query;
 
 use Illuminate\Database\Query\Grammars\Grammar as BaseGrammar;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 
 class Grammar extends BaseGrammar
 {
@@ -40,7 +42,7 @@ class Grammar extends BaseGrammar
             return $property;
         }
 
-        $property = str_replace(array('\\', "\0", "\n", "\r", "'", '"', "\x1a"), array('\\\\', '\\0', '\\n', '\\r', "\\'", '\\"', '\\Z'), $property);
+        $property = str_replace(['\\', "\0", "\n", "\r", "'", '"', "\x1a"], ['\\\\', '\\0', '\\n', '\\r', "\\'", '\\"', '\\Z'], $property);
 
         if (preg_match('~#(-)?[0-9]+:[0-9]+~', $property)) {//is (graph) id, don't wrap it or error would be thrown
             return $property;
@@ -52,7 +54,7 @@ class Grammar extends BaseGrammar
     public function prepareLabels(array $labels)
     {
         // get the labels prepared and back to a string imploded by : they go.
-        return implode('', array_map(array($this, 'wrapLabel'), $labels));
+        return implode('', Arr::map($labels, [$this, 'wrapLabel']));
     }
 
     /**
@@ -61,7 +63,7 @@ class Grammar extends BaseGrammar
      * @param string $label
      * @return string
      */
-    public function wrapLabel($label)
+    public function wrapLabel(string $label): string
     {
         // every label must begin with a ':' so we need to check
         // and reformat if need be.
@@ -72,9 +74,10 @@ class Grammar extends BaseGrammar
      * Prepare a relationship label.
      *
      * @param string $relation
+     * @param string $related
      * @return string
      */
-    public function prepareRelation($relation, $related)
+    public function prepareRelation(string $relation, string $related): string
     {
         return "rel_" . mb_strtolower($relation) . '_' . $related . ":{$relation}";
     }
@@ -86,18 +89,16 @@ class Grammar extends BaseGrammar
      * @param string $labels
      * @return string
      */
-    public function normalizeLabels($labels)
+    public function normalizeLabels(string $labels): string
     {
-        return mb_strtolower(str_replace(':', '_', preg_replace('/^:/', '', $labels)));
+        return Str::of(preg_replace('/^:/', '', $labels))->replace(':', '_')->lower()->value();
     }
 
     /**
      * Wrap a value in keyword identifiers.
      *
-     * @param string $value
-     * @return string
      */
-    public function wrap($value, $prefixAlias = false)
+    public function wrap($value, bool $prefixAlias = false): string
     {
         // We will only wrap the value unless it has parentheses
         // in it which is the case where we're matching a node by id, or an *
@@ -254,5 +255,10 @@ class Grammar extends BaseGrammar
     public function wrapTable($table)
     {
         return $table;
+    }
+
+    public function getDateFormat(): string
+    {
+        return 'Y-m-d H:i:s';
     }
 }

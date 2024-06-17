@@ -3,13 +3,18 @@
 namespace SKCheung\ArcadeDB;
 
 use GuzzleHttp\Client as GuzzleClient;
+use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Database\Connection as BaseConnection;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
+use SKCheung\ArcadeDB\Enums\QueryLanguage;
 
 class Connection extends BaseConnection
 {
     protected GuzzleClient $connection;
+
+    protected QueryLanguage $language = QueryLanguage::SQL;
 
     public function __construct(array $config)
     {
@@ -29,6 +34,18 @@ class Connection extends BaseConnection
         return 'arcadedb';
     }
 
+    public function getQueryLanguage(): string
+    {
+        return $this->language->value;
+    }
+
+    public function setQueryLanguage(QueryLanguage $language): self
+    {
+        $this->language = $language;
+
+        return $this;
+    }
+
     public function select($query, $bindings = [], $useReadPdo = true)
     {
         return $this->run($query, $bindings, function ($query, $bindings) use ($useReadPdo) {
@@ -38,10 +55,30 @@ class Connection extends BaseConnection
 
             $response = $this->connection->request('POST', 'command/' . $this->config['database'], [
                 'json' => [
-                    'language' => 'sql',
+                    'language' => $this->getQueryLanguage(),
                     'command' => $this->bindQueryParams($query, $bindings),
                 ]
             ]);
+
+            return $this->decode($response);
+        });
+    }
+
+    public function insert($query, $bindings = [], $useWritePdo = true)
+    {
+        return $this->run($query, $bindings, function ($query, $bindings) use ($useWritePdo) {
+            if ($this->pretending()) {
+                return [];
+            }
+
+            $response = $this->connection->request('POST', 'command/' . $this->config['database'], [
+                'json' => [
+                    'language' => $this->getQueryLanguage(),
+                    'command' => $this->bindQueryParams($query, $bindings),
+                ]
+            ]);
+
+            $this->recordsHaveBeenModified();
 
             return $this->decode($response);
         });
@@ -56,7 +93,7 @@ class Connection extends BaseConnection
 
             $response = $this->connection->request('POST', 'command/' . $this->config['database'], [
                 'json' => [
-                    'language' => 'sql',
+                    'language' => $this->getQueryLanguage(),
                     'command' => $this->bindQueryParams($query, $bindings),
                 ]
             ]);
@@ -74,6 +111,23 @@ class Connection extends BaseConnection
         return $response->getStatusCode() === 204;
     }
 
+    public function serverInfo(): array
+    {
+        $response = $this->connection->request('GET', 'server');
+
+        return json_decode($response->getBody()->getContents(), true);
+    }
+
+    public function getServerVersion(): string
+    {
+        return Arr::get($this->serverInfo(), 'version', '');
+    }
+
+    public function getServerName(): string
+    {
+        return Arr::get($this->serverInfo(), 'serverName', '');
+    }
+
     protected function getDefaultPostProcessor(): Query\Processor
     {
         return new Query\Processor;
@@ -84,7 +138,7 @@ class Connection extends BaseConnection
         return new Query\Grammar;
     }
 
-    protected function createConnection(array $config, array $options)
+    protected function createConnection(array $config, array $options): GuzzleClient
     {
         $baseUri = (!parse_url($config['host'], PHP_URL_HOST)) ? $config['host'] . ':' . $config['port'] : $config['host'];
 
@@ -113,7 +167,7 @@ class Connection extends BaseConnection
         return $decoded['result'];
     }
 
-    protected function bindQueryParams($query, $bindings)
+    protected function bindQueryParams($query, $bindings): string
     {
         collect($this->prepareBindings($bindings))->each(function ($value) use (&$query) {
             $value = is_string($value) ? "'$value'" : $value;

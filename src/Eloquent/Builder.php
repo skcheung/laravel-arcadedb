@@ -16,4 +16,6 @@ class Builder extends BaseBuilder
 
         return $this->whereKey($id)->first($columns);
     }
+
+
 }
