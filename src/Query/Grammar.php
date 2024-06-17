@@ -254,7 +254,7 @@ class Grammar extends BaseGrammar
 
     public function wrapTable($table)
     {
-        return $table;
+        return $this->getValue($table);
     }
 
     public function getDateFormat(): string

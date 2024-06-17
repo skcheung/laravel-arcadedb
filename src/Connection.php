@@ -8,6 +8,7 @@ use Illuminate\Database\Connection as BaseConnection;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
+use SKCheung\ArcadeDB\Exceptions\InvalidTransactionException;
 use SKCheung\ArcadeDB\Enums\QueryLanguage;
 
 class Connection extends BaseConnection
@@ -15,6 +16,10 @@ class Connection extends BaseConnection
     protected GuzzleClient $connection;
 
     protected QueryLanguage $language = QueryLanguage::SQL;
+
+    protected array $lastResults;
+
+    protected string $transactionId;
 
     public function __construct(array $config)
     {
@@ -32,6 +37,11 @@ class Connection extends BaseConnection
     public function getDriverName(): string
     {
         return 'arcadedb';
+    }
+
+    public function getLastResults(): array
+    {
+        return $this->lastResults;
     }
 
     public function getQueryLanguage(): string
@@ -61,6 +71,28 @@ class Connection extends BaseConnection
             ]);
 
             return $this->decode($response);
+        });
+    }
+
+    public function affectingStatement($query, $bindings = [], $useReadPdo = true)
+    {
+        return $this->run($query, $bindings, function ($query, $bindings) {
+            if ($this->pretending()) {
+                return 0;
+            }
+
+            $response = $this->connection->request('POST', 'command/' . $this->config['database'], [
+                'json' => [
+                    'language' => 'sql',
+                    'command' => $this->bindQueryParams($query, $bindings),
+                ]
+            ]);
+
+            $count = Arr::first($this->decode($response))['count'];
+
+            $this->recordsHaveBeenModified($count > 0);
+
+            return $count;
         });
     }
 
@@ -100,7 +132,9 @@ class Connection extends BaseConnection
 
             $this->recordsHaveBeenModified();
 
-            return $this->decode($response);
+            $this->lastResults = $this->decode($response);
+
+            return $response->getStatusCode() === 200;
         });
     }
 
@@ -128,6 +162,22 @@ class Connection extends BaseConnection
         return Arr::get($this->serverInfo(), 'serverName', '');
     }
 
+    public function collection($collection)
+    {
+        $query = new Query\Builder($this, $this->getQueryGrammar(), $this->getPostProcessor());
+
+        return $query->from($collection);
+    }
+
+    public function beginTransaction()
+    {
+        foreach ($this->beforeStartingTransaction as $callback) {
+            $callback($this);
+        }
+
+
+    }
+
     protected function getDefaultPostProcessor(): Query\Processor
     {
         return new Query\Processor;
@@ -151,12 +201,16 @@ class Connection extends BaseConnection
             $clientConfig['headers']['Authorization'] = 'Basic ' . $credentials;
         }
 
+        if ($this->transactionId) {
+            $clientConfig['headers']['arcadedb-session-id'] = $this->transactionId;
+        }
+
         $clientConfig['headers']['Content-Type'] = 'application/json';
 
         return new GuzzleClient($clientConfig);
     }
 
-    protected function decode($response)
+    public function decode($response)
     {
         if (is_array($response)) {
             return $response;
@@ -175,5 +229,27 @@ class Connection extends BaseConnection
         });
 
         return $query;
+    }
+
+    protected function createTransaction()
+    {
+        $response = $this->connection->request('POST', 'begin/'.$this->config['database']);
+
+        if ($response->hasHeader('arcadedb-session-id')) {
+            $this->transactionId = Arr::first($response->getHeader('arcadedb-session-id'));
+        }
+    }
+
+    public function commit()
+    {
+        $this->fireConnectionEvent('committing');
+
+        $response = $this->connection->request('POST', 'commit/'.$this->config['database']);
+
+        if ($response->getStatusCode() === 500) {
+            throw new InvalidTransactionException();
+        }
+
+        $this->fireConnectionEvent('committed');
     }
 }
